@@ -1,0 +1,11 @@
+[ USB 插入 ] 
+    ↓ (WMI 事件觸發)
+[ USB Watcher Service ] → 監聽插拔，呼叫 ADB 處理器
+    ↓
+[ ADB Handler ] → 自動連線、推送檔案、啟動 Termux
+    ↓
+[ Termux AI Bootloader ] → 下載模型、執行 llama.cpp
+    ↓
+[ Control Tower API ] → 記錄狀態、提供查詢介面
+    ↓
+[ Dashboard / Log ] → 顯示即時狀態、歷史紀錄

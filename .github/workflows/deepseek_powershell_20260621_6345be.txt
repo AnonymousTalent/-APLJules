@@ -1,0 +1,194 @@
+python -m uvicorn control_tower.main:app --reload --host 0.0.0.0 --port 8000
+
+
+這是 **Web Machine Learning 翻譯與語言偵測 API** 的提案規格與示範程式碼。
+
+---
+
+## 📌 關於這個 API
+
+這是一個由 Chrome 內建 AI 團隊提出的早期設計草案，目標是將瀏覽器既有的語言翻譯與偵測能力，透過 JavaScript API 開放給網頁開發者使用。
+
+**主要用途：**
+- 即時翻譯使用者輸入的文字
+- 即時偵測文字的語言
+- 處理瀏覽器內建翻譯無法處理的情境（複雜 DOM、非 DOM 內容等）
+
+---
+
+## 🧩 快速開始範例
+
+### 1. 基本翻譯（無錯誤處理）
+
+```js
+const translator = await Translator.create({
+  sourceLanguage: "en",
+  targetLanguage: "ja"
+});
+const text = await translator.translate("Hello, world!");
+```
+
+
+串流翻譯（適用於長文字）：
+```js
+const readableStreamOfText = translator.translateStreaming(`
+  Four score and seven years ago our fathers brought forth, upon this...
+`);
+```
+
+
+---
+
+### 2. 語言偵測
+
+```js
+const detector = await LanguageDetector.create();
+const results = await detector.detect("Hello, world!");
+console.log(results.detectedLanguage, results.confidence);
+```
+
+
+> `results` 會回傳 `{ detectedLanguage, confidence }` 物件陣列，按信心度由高到低排序，`detectedLanguage` 為 BCP 47 語言標籤。
+
+---
+
+### 3. 指定預期語言（提升偵測準確度）
+
+```js
+const detector = await LanguageDetector.create({
+  expectedInputLanguages: ["en", "ja"]
+});
+```
+
+
+---
+
+### 4. 完整流程：偵測 + 翻譯（含可用性檢查）
+
+```js
+async function translateUnknownCustomerInput(textToTranslate, targetLanguage) {
+  const detectorAvailability = await LanguageDetector.availability();
+  // 若無語言偵測器，則假設來源語言與目標語言相同
+  // ...（完整程式碼請參考原文）
+  const translator = await Translator.create({
+    sourceLanguage: detectedLanguage,
+    targetLanguage: targetLanguage
+  });
+  return await translator.translate(textToTranslate);
+}
+```
+
+
+---
+
+### 5. 監控下載進度（顯示進度條）
+
+```js
+const translator = await Translator.create({
+  sourceLanguage: "en",
+  targetLanguage: "ja",
+  monitor(m) {
+    m.addEventListener("downloadprogress", (e) => {
+      console.log(`下載進度：${e.loaded / e.total * 100}%`);
+    });
+  }
+});
+```
+
+
+> 若下載失敗，`downloadprogress` 事件會停止發送，`create()` 回傳的 Promise 會以 `NetworkError` DOMException 被拒絕。
+
+---
+
+### 6. 處理輸入配額限制（大文字輸入）
+
+```js
+const detector = await LanguageDetector.create();
+try {
+  console.log(await detector.detect(potentiallyLargeInput));
+} catch (e) {
+  if (e.name === "QuotaExceededError") {
+    console.error(`輸入文字過大！`);
+  }
+}
+```
+
+
+測量輸入用量：
+```js
+const translator = await Translator.create({
+  sourceLanguage: "en",
+  targetLanguage: "jp"
+});
+meterEl.max = translator.inputQuota;
+textbox.addEventListener("input", () => {
+  meterEl.value = await translator.measureInputUsage(textbox.value);
+});
+```
+
+
+---
+
+## ⚠️ 注意事項
+
+| 項目 | 說明 |
+|------|------|
+| **狀態** | 此為早期設計草案，尚未批准在 Chrome 中正式推出 |
+| **可用性** | 瀏覽器不一定支援所有語言組合，建議先呼叫 `availability()` 檢查 |
+| **實作方式** | 可採用本地模型或雲端服務，細節對開發者抽象化 |
+| **非目標** | 不強制所有瀏覽器支援所有語言，也不保證翻譯品質的一致性 |
+
+---
+
+## 🔗 相關資源
+
+- **規格文件**：https://webmachinelearning.github.io/translation-api/ 
+- **GitHub 提案倉庫**：https://github.com/webmachinelearning/translation-api 
+- **MDN 文件**（可能尚在更新）：搜尋 "Translator and Language Detector APIs"
+
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>翻譯 API 測試</title>
+</head>
+<body>
+  <h1>瀏覽器內建翻譯測試</h1>
+  <textarea id="input" rows="4" cols="50">Hello, world!</textarea>
+  <br>
+  <button id="translateBtn">翻譯成中文</button>
+  <p id="output"></p>
+
+  <script>
+    // 檢查 API 是否可用
+    if (!('Translator' in window)) {
+      document.getElementById('output').textContent = '❌ 此瀏覽器不支援 Translator API (需 Chrome 實驗性功能)';
+    } else {
+      document.getElementById('translateBtn').addEventListener('click', async () => {
+        const inputText = document.getElementById('input').value;
+        try {
+          // 檢查翻譯器可用性
+          const availability = await Translator.availability({
+            sourceLanguage: 'en',
+            targetLanguage: 'zh'
+          });
+          if (availability !== 'readily') {
+            document.getElementById('output').textContent = '⚠️ 翻譯模型尚未準備好，請稍後重試';
+            return;
+          }
+          // 建立翻譯器
+          const translator = await Translator.create({
+            sourceLanguage: 'en',
+            targetLanguage: 'zh'
+          });
+          // 執行翻譯
+          const result = await translator.translate(inputText);
+          document.getElementById('output').textContent = '✅ ' + result;
+        } catch (err) {
+          document.getElementById('output').textContent = '❌ 錯誤：' + err.message;
+        }
+      });
+    }
+  </script>
+</body>
+</html>
